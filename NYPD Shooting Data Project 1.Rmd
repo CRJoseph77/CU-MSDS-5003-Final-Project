@@ -1,0 +1,338 @@
+---
+title: "NYPD Shooting Data Project"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Importing Relevant Libraries
+
+```{r libraries}
+library(tidyverse)
+library(lubridate)
+```
+
+
+# Importing Data
+
+```{r importing data}
+shooting_data <- read_csv("https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv")
+```
+
+### Description
+This data set contains information about shootings in New York City from 2006 to 2023. It contains location data as well as data about the date and time of the shootings. It also contains data about the perpetrator and the victim. It is from the city of new york and can be found here: <https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv>
+
+# Summary of Data
+
+```{r summary}
+summary(shooting_data)
+```
+### Question of Interest
+While it would be interesting to explore a handful of facets of this data (perpetrator traits, victim traits, etc.) I chose to explore whether or not there was a difference in the frequency of shootings by Borough, Month and Year. 
+
+Questions: Is there a difference in the frequency of shootings in difference boroughs? Is there a difference in the frequency of shootings between years from 2006 to 2023? Is there a difference in the number of shootings that occurred in each month over the years from 2006 to 2023?
+
+# Cleaning Data
+
+Getting rid of unwanted columns.
+
+```{r removing columns}
+shooting_data <- shooting_data %>% select(-c('Latitude','Longitude',
+                                             'X_COORD_CD','Y_COORD_CD','LOC_OF_OCCUR_DESC',
+                                             'LOC_CLASSFCTN_DESC','LOCATION_DESC', 'Lon_Lat'))
+#Checking remaining columns
+summary(shooting_data)
+```
+I chose to keep columns about the date and time of the shooting, the borough, precinct, jurisdiction, murder flag, perpetrator data and victim data. I chose to omit the other columns because they had too many missing values and because borough is granular enough for the purposes of this project that the extra location data was unnecessary. 
+
+Re-coding relevant column data types as factors and date.
+
+Jurisdiction and Precinct should be categorical (the numbers act as categories), and date should be a date type.
+
+```{r adjusting column data type}
+shooting_data <- shooting_data %>% mutate(PRECINCT = as.factor(PRECINCT),JURISDICTION_CODE = as.factor(JURISDICTION_CODE), 
+                                          OCCUR_DATE = mdy(OCCUR_DATE))
+```
+
+Verifying that the change worked.
+
+```{r}
+class(shooting_data$JURISDICTION_CODE)
+class(shooting_data$PRECINCT)
+class(shooting_data$OCCUR_DATE)
+```
+
+
+Examining the counts of values in each categorical factor. Looking for how many NULLs, or any other issues.
+
+```{r}
+count(shooting_data, BORO)
+
+```
+```{r}
+count(shooting_data, PERP_AGE_GROUP)
+```
+There are a few NULLS and NAs in PERP_AGE_GROUP, also, there are a few values that are not age groups.
+
+```{r}
+count(shooting_data, PERP_SEX)
+```
+```{r}
+count(shooting_data, PERP_RACE)
+```
+There are also NULLS and NAs in PERP_RACE and PERP_SEX. 
+
+```{r}
+count(shooting_data, VIC_AGE_GROUP)
+```
+No NULLs in VIC_AGE_GROUP, but there is another erroneous age value.
+
+```{r}
+count(shooting_data, VIC_SEX)
+```
+```{r}
+count(shooting_data, VIC_RACE)
+```
+
+Checking for NAs in JURSIDICTION_CODE, PRECINCT and OCCUR_DATE
+
+```{r Looking for NAs in JURISDICTION_CODE, DATE and PRECINCT}
+which(is.na(shooting_data$PRECINCT))
+which(is.na(shooting_data$JURISDICTION_CODE))
+which(is.na(shooting_data$OCCUR_DATE))
+```
+Looks like JURISDICTION_CODE has a few, but the other two do not. 
+
+# Dealing with NAs
+
+There are a few options for how we could deal with the NAs
+
+1. Remove all rows with NAs. This could cause issues if the values are not missing at random.
+
+2. Delete columns with NAs or don't use them for our analysis. This wouldn't leave us with very many columns to work with.
+
+3. Replace NAs with an estimate. There is already an UNKONWN category, so we can combine the null values with those observations in order to still work with the rows with NAs.
+
+*Dealing with NAs can be a tricky thing, and needs to be done carefully. I'm not sure which option is best. For the purposes of this project, I'm going to replace the NAs and NULLS with UNKNOWN so that I can keep all of the data. This assumes that UNKONWN and NA/NULL are all the same. If it happens to be the case that NA, NULL or UNKNOWN are categorically/systematically different for some reason, this could cause issues with any conclusions found in the analyses pertaining to this project.*
+
+Replacing NAs and NULLs with 'UNKNOWN'
+```{r}
+#Replacing NULL with UNKNOWN
+shooting_data$PERP_AGE_GROUP[shooting_data$PERP_AGE_GROUP == '(null)'] <- 'UNKNOWN'
+shooting_data$PERP_RACE[shooting_data$PERP_RACE == '(null)'] <- 'UNKNOWN'
+shooting_data$PERP_SEX[shooting_data$PERP_SEX == '(null)'] <- 'UNKNOWN'
+
+shooting_data$PERP_AGE_GROUP[is.na(shooting_data$PERP_AGE_GROUP)] <- 'UNKNOWN'
+shooting_data$PERP_RACE[is.na(shooting_data$PERP_RACE)] <- 'UNKNOWN'
+shooting_data$PERP_SEX[is.na(shooting_data$PERP_SEX)] <- 'UNKNOWN'
+```
+Verifying that NAs and nulls were removed
+```{r}
+which(shooting_data$PERP_AGE_GROUP == '(null)')
+which(shooting_data$PERP_RACE == '(null)')
+which(shooting_data$PERP_SEX == '(null)')
+
+which(is.na(shooting_data$PERP_AGE_GROUP))
+which(is.na(shooting_data$PERP_RACE))
+which(is.na(shooting_data$PERP_SEX))
+```
+
+
+Looking at NAs in JURISDICTION_CODE
+```{r}
+#Finding the row indeces that contain NAs
+which(is.na(shooting_data$JURISDICTION_CODE))
+```
+Looking at the rows with NA
+```{r}
+#Inspecting the rows with NAs
+shooting_data[which(is.na(shooting_data$JURISDICTION_CODE)),]
+```
+
+Removing those rows.
+
+```{r}
+shooting_data <- filter(shooting_data[-which(is.na(shooting_data$JURISDICTION_CODE)),])
+
+#Verifying
+which(is.na(shooting_data$JURISDICTION_CODE))
+```
+
+# Cleaning Age Group Variables
+
+While looking for NULLS, I noticed the AGE categories contain a few values that are not age ranges, and each only had 1 observation. These are likely errors, so we'll remove these rows.
+
+```{r cleaning perp age group}
+#Getting rid of rows with incorrect values
+shooting_data <- shooting_data %>% filter(shooting_data$PERP_AGE_GROUP != '1020')
+shooting_data <- shooting_data %>% filter(shooting_data$PERP_AGE_GROUP != '1028')
+shooting_data <- shooting_data %>% filter(shooting_data$PERP_AGE_GROUP != '224')
+shooting_data <- shooting_data %>% filter(shooting_data$PERP_AGE_GROUP != '940')
+
+#Verifying
+count(shooting_data, PERP_AGE_GROUP)
+```
+
+```{r cleaning vic age group}
+#Getting rid of rows with incorrect values
+shooting_data <- shooting_data %>% filter(shooting_data$VIC_AGE_GROUP != '1022')
+
+#Verifying
+count(shooting_data, VIC_AGE_GROUP)
+```
+
+# Analysis and Visualization
+
+For these analyses, I am going to breifly explore when and where shootings tend to happen. I am going to look at which boroughs tend to have the most shootings, and which years and months tend to have more shootings. 
+
+Grouping data by year and borough and adding a number of shootings variable to show how many shootings per year in each borough. 
+
+```{r}
+shootings_by_year_boro <- shooting_data %>% mutate(year = year(OCCUR_DATE)) %>% 
+  mutate(shootings = 1) %>% 
+  group_by(year,BORO) %>% 
+  summarize(shootings = sum(shootings)) %>% 
+  select(year, BORO, shootings)
+
+shootings_by_year_boro
+```
+Looking at shootings broken down by borough
+
+```{r shootings by borough}
+shootings_by_boro <- shootings_by_year_boro %>% group_by(BORO) %>% 
+  summarize(shootings = sum(shootings))
+
+shootings_by_boro$BORO <- factor(shootings_by_boro$BORO, levels = c("BROOKLYN","BRONX", "QUEENS","STATEN ISLAND", "MANHATTAN"))
+
+shootings_by_boro
+```
+Creating a bar plot to compare the number of shootings in different boroughs
+
+```{r barplot of shootings by borough}
+shootings_by_boro %>% ggplot(aes(x = BORO, y = shootings, fill = BORO))+
+  geom_bar(stat = "Identity") +
+  labs(title = "Shooting Incidents by Borough (2006-2023) ") +
+  xlab("Borough") + ylab("Number of Shooting Incidents")
+```
+It looks like Bronx and Brooklyn have the most shootings, and Staten Island has the fewest. 
+
+Looking at shootings per year in the same manner
+
+```{r shootings by year}
+shootings_by_year <- shootings_by_year_boro %>% group_by(year) %>%
+  mutate(year = as.factor(year)) %>% 
+  summarize(shootings = sum(shootings))
+
+shootings_by_year
+```
+Creating a bar plot to compare the number of shootings in different years.
+
+```{r barplot of shootings by year}
+shootings_by_year %>% ggplot(aes(x = year, y = shootings, fill = year))+
+  geom_bar(stat = "Identity") +
+  labs(title = "Shooting Incidents by Year (2006-2023) ") +
+  theme(axis.text.x = element_text(angle = 90)) +
+  xlab("Year") + ylab("Number of Shooting Incidents")
+```
+It looks like there were more shootings from 2006 to 2012, then there were fewer during the period from 2013 to 2019. Then, there were more once again from 2020 to 2023. It looks like the data ends in 2023, so I'm curious if the drop off there is due to incomplete data that year. 
+
+I wonder if there are variations in shootings throughout the year, or if they are relatively consistent each month. 
+
+Adding a count for the number of shootings each month.
+
+```{r shootings by month}
+shootings_by_month <- shooting_data %>% mutate(month = month(OCCUR_DATE, label = TRUE)) %>% 
+  mutate(year = year (OCCUR_DATE)) %>% 
+  mutate(shootings = 1) %>% 
+  group_by(year,month, BORO) %>% 
+  summarize(shootings = sum(shootings)) %>% 
+  select(year, month, shootings, BORO) %>% 
+  unite("month_year", c(month, year), sep = " ", remove = FALSE) %>% 
+  mutate(month_year = my(month_year))
+
+shootings_by_month
+```
+
+Plotting shootings over time.
+
+```{r line plot of shootings each year}
+shootings_by_month %>% group_by(month_year) %>% 
+  summarize(shootings = sum(shootings))%>% 
+  ggplot(aes(x = month_year, y = shootings)) +
+  geom_line(aes(color = "shootings")) +
+    labs(title = "Shooting Incidents Over Time (2006-2023) ") +
+  xlab("Year") + ylab("Number of Shooting Incidents")
+```
+It looks like shootings do fluctuate throughout the year, I wonder which months tend to have more shootings. 
+
+Plotting shootings by month.
+
+```{r plot of shootings by month}
+shootings_by_month %>% group_by(month) %>% 
+  summarize(shootings = sum(shootings)) %>% 
+  ggplot(aes(x = month, y = shootings, fill = month)) +
+  geom_bar(stat = "Identity") +
+    labs(title = "Shooting Incidents by Month (2006-2023)") +
+  xlab("Month") + ylab("Number of Shooting Incidents")
+```
+It looks like there are more shootings in the summer months and fewer in the winter months. 
+
+Looking at shootings over time in each borough
+
+```{r shootings in each borough over time}
+years <- c(2018:2023)
+for(i in years){
+  plots <- shootings_by_month %>% filter(year == i) %>% 
+  ggplot(aes(x = month_year, y = shootings, color = BORO, group = BORO)) +
+  geom_line() +
+  labs(title = str_c("Shooting Incidents by Borough in ",as.character(i))) +
+  theme(axis.text.x = element_text(angle = 90)) +
+  scale_x_date(date_breaks = "1 month") +
+  xlab("Month") + ylab("Number of Shooting Incidents")
+  
+  print(plots)
+}
+```
+It looks like the effect of month is more pronounced in boroughs with more shootings. Boroughs with fewer shootings have more consistent amounts of shootings throughout the year, but boroughs with more shootings have more during the summer than the winter. 
+
+# Model/Analysis
+
+I am going to use an Analysis of Variance model to see if there is a difference in the number of shootings by month.  
+
+Creating the model and getting a summary.
+```{r anova model}
+mod <- aov(shootings~month,data = shootings_by_month)
+
+summary(mod)
+```
+This shows that p<2e-16, which indicates that it is very unlikely the difference in shootings by month is due to chance. This suggests a statistically significant difference between the number of shootings based on month. This suggests that the month of the year is related to the number of shootings. 
+
+Now looking at which months specifically seem to have statistically significant differences/the strongest ability to predict the amount of shootings. Filtering the post_hoc tests for months that have p < 0.01.
+```{r post hoc test}
+post_hoc <- TukeyHSD(mod)
+
+post_hoc.df <- as.data.frame(post_hoc[1])
+
+post_hoc.df %>% filter(month.p.adj < 0.01, ordered = TRUE)
+```
+
+It looks like generally the summer months (May through August) tend to differ significantly from the winter months. February differs significantly from the fall months (September and October) as well. June and July also differ significantly from the spring months (March and April) and the fall months. This suggests that month can possibly be used to predict the number of shootings.
+
+# Conclusion and Bias
+
+### Conclusion
+
+Using data about shootings from NYPD and some basic analysis, I was able to get a rough idea of when/where shootings have happened in New York City from 2006 to 2023. I looked at the division of shootings by borough from 2006 to 2023. It appears as though Staten Island had the fewest shootings and Brooklyn had the most. I also discovered that there were more shootings from 2006 to 2012, and then a downturn throughout the mid and late 2010s. After 2019, there was once again an uptick in shootings, lasting until the end of the data. It also appears as though shootings do not happen at a consistent rate throughout the year. A closer examination of the number of shootings per month shows that more shootings occurred during the summer months (June through September) and fewer shootings occurred during the winter months (November through February). An Analysis of Variance model with a post-hoc test suggested that these differences were statistically significant, and that many of the summer months had significantly more shootings than other months, and the winter months had significantly fewer shootings than the summer months and other months. 
+
+### Bias and Limitations
+
+I am not from New York so I am unfamiliar with the general locations and layout of the city as well as the type and frequency of crimes committed there. I do not have extensive knowledge of shootings and why shootings happen or who commits them. 
+
+I would say I am biased to view men as more violent than women, and I am biased toward thinking that men are more likely to commit shootings than women. I am also biased to think that younger adults are more likely to commit shootings than older adults. Lastly, I'm sure I have some implicit racial bias that has been reinforced by societal norms and media.
+
+I was able to address these biases by keeping my analyses focused on variables that did not pertain to these elements of the data. I took on a neutral view of the data and let my analyses inform my opinions and guide my questions. 
